@@ -1,0 +1,212 @@
+<?php
+defined('MOODLE_INTERNAL') || die();
+
+/**
+ * Extend course navigation
+ */
+function local_quest_extend_navigation_course($navigation, $course, $context) {
+    if (has_capability('local/quest:view', $context)) {
+        $url = new moodle_url('/local/quest/index.php', ['courseid' => $course->id]);
+        $navigation->add(
+            get_string('quests', 'local_quest'),
+            $url,
+            navigation_node::TYPE_CUSTOM,
+            null,
+            'quests',
+            new pix_icon('t/grades', '')
+        );
+    }
+    
+    if (has_capability('local/quest:manage', $context)) {
+        $url = new moodle_url('/local/quest/editquest.php', ['courseid' => $course->id]);
+        $navigation->add(
+            get_string('managequests', 'local_quest'),
+            $url,
+            navigation_node::TYPE_SETTING,
+            null,
+            'managequests'
+        );
+    }
+}
+
+/**
+ * Calculate user level based on points
+ */
+function local_quest_calculate_level($points) {
+    // Simple formula: Level = floor(sqrt(points/100)) + 1
+    if ($points <= 0) {
+        return 1;
+    }
+    return floor(sqrt($points / 100)) + 1;
+}
+
+/**
+ * Check and update quest completion
+ */
+function local_quest_check_completion($userid, $courseid, $action, $value = null) {
+    global $DB;
+    
+    // Get available quests for this action
+    $params = ['courseid' => $courseid, 'required_action' => $action];
+    if ($value) {
+        $params['required_value'] = $value;
+    }
+    
+    $quests = $DB->get_records('local_quest', $params);
+    
+    foreach ($quests as $quest) {
+        // Check prerequisites
+        if ($quest->prerequisite > 0) {
+            $prereq = $DB->get_record('local_quest_progress', [
+                'userid' => $userid,
+                'questid' => $quest->prerequisite,
+                'status' => 2 // completed
+            ]);
+            
+            if (!$prereq) {
+                continue; // Prerequisite not met
+            }
+        }
+        
+        // Check if already completed
+        $progress = $DB->get_record('local_quest_progress', [
+            'userid' => $userid,
+            'questid' => $quest->id
+        ]);
+        
+        if ($progress && $progress->status == 2) {
+            continue; // Already completed
+        }
+        
+        // Mark as available or complete
+        if (!$progress) {
+            $progress = new stdClass();
+            $progress->userid = $userid;
+            $progress->questid = $quest->id;
+            $progress->status = 1; // Available
+            $progress->timemodified = time();
+            $DB->insert_record('local_quest_progress', $progress);
+        }
+        
+        // If action matches, complete the quest
+        if ($progress->status == 1) {
+            local_quest_complete_quest($userid, $quest);
+        }
+    }
+}
+
+/**
+ * Complete a quest and award points
+ */
+function local_quest_complete_quest($userid, $quest) {
+    global $DB;
+    
+    // Update progress
+    $progress = $DB->get_record('local_quest_progress', [
+        'userid' => $userid,
+        'questid' => $quest->id
+    ]);
+    
+    if ($progress) {
+        $progress->status = 2; // Completed
+        $progress->datecompleted = time();
+        $progress->timemodified = time();
+        $DB->update_record('local_quest_progress', $progress);
+    }
+    
+    // Award points
+    $userstats = $DB->get_record('local_quest_user', [
+        'userid' => $userid,
+        'courseid' => $quest->courseid
+    ]);
+    
+    if (!$userstats) {
+        $userstats = new stdClass();
+        $userstats->userid = $userid;
+        $userstats->courseid = $quest->courseid;
+        $userstats->totalpoints = 0;
+        $userstats->currentlevel = 1;
+        $userstats->levelpoints = 0;
+        $userstats->timemodified = time();
+        $userstats->id = $DB->insert_record('local_quest_user', $userstats);
+    }
+    
+    $userstats->totalpoints += $quest->points;
+    $userstats->currentlevel = local_quest_calculate_level($userstats->totalpoints);
+    $userstats->timemodified = time();
+    
+    $DB->update_record('local_quest_user', $userstats);
+    
+    // Trigger event
+    $event = \local_quest\event\quest_completed::create([
+        'context' => context_course::instance($quest->courseid),
+        'objectid' => $quest->id,
+        'userid' => $userid,
+        'other' => [
+            'points' => $quest->points,
+            'questname' => $quest->name
+        ]
+    ]);
+    $event->trigger();
+    
+    return true;
+}
+
+/**
+ * Get user dashboard data
+ */
+function local_quest_get_dashboard_data($userid, $courseid) {
+    global $DB;
+    
+    $data = new stdClass();
+    
+    // Get user stats
+    $data->userstats = $DB->get_record('local_quest_user', [
+        'userid' => $userid,
+        'courseid' => $courseid
+    ]);
+    
+    if (!$data->userstats) {
+        $data->userstats = (object)[
+            'totalpoints' => 0,
+            'currentlevel' => 1,
+            'levelpoints' => 0
+        ];
+    }
+    
+    // Get all quests
+    $data->quests = $DB->get_records('local_quest', 
+        ['courseid' => $courseid], 
+        'sortorder ASC'
+    );
+    
+    // Get progress for each quest
+    foreach ($data->quests as $quest) {
+        $progress = $DB->get_record('local_quest_progress', [
+            'userid' => $userid,
+            'questid' => $quest->id
+        ]);
+        
+        $quest->status = $progress ? $progress->status : 0;
+        $quest->datecompleted = $progress ? $progress->datecompleted : null;
+        $quest->progressclass = local_quest_get_status_class($quest->status);
+    }
+    
+    // Calculate next level points
+    $data->nextlevel = $data->userstats->currentlevel + 1;
+    $data->pointsfornextlevel = pow($data->nextlevel - 1, 2) * 100;
+    $data->progresspercent = $data->userstats->totalpoints > 0 ? 
+        min(100, ($data->userstats->totalpoints / $data->pointsfornextlevel) * 100) : 0;
+    
+    return $data;
+}
+
+function local_quest_get_status_class($status) {
+    switch($status) {
+        case 0: return 'locked';
+        case 1: return 'available';
+        case 2: return 'completed';
+        default: return 'locked';
+    }
+}
+?>
