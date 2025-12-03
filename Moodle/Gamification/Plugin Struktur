@@ -1,0 +1,20 @@
+# Verzeichnisstruktur:
+
+moodle/local/quest/
+├── version.php
+├── lang/en/local_quest.php
+├── db/
+│   ├── access.php
+│   ├── install.xml
+│   └── upgrade.php
+├── classes/
+│   ├── event/
+│   │   └── quest_completed.php
+│   └── observer.php
+├── lib.php
+├── index.php
+├── view.php
+├── editquest.php
+├── templates/
+│   └── quest_dashboard.mustache
+└── styles.css
