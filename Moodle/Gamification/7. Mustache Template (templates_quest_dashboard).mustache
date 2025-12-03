@@ -1,0 +1,64 @@
+<div class="quest-dashboard">
+    <div class="player-card">
+        <h2>{{#str}}questdashboard, local_quest{{/str}}</h2>
+        <div class="level-display">
+            <div class="level-badge">Level {{userstats.currentlevel}}</div>
+            <div class="points">{{userstats.totalpoints}} XP</div>
+        </div>
+        
+        <div class="progress-container">
+            <div class="progress-label">
+                Zum nächsten Level: {{userstats.totalpoints}} / {{pointsfornextlevel}} XP
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: {{progresspercent}}%"></div>
+            </div>
+            <div class="progress-percent">{{progresspercent}}%</div>
+        </div>
+    </div>
+    
+    <div class="quests-container">
+        <h3>{{#str}}yourquests, local_quest{{/str}}</h3>
+        
+        {{#quests}}
+        <div class="quest-card {{progressclass}}">
+            <div class="quest-header">
+                <h4>{{name}}</h4>
+                <span class="quest-points">{{points}} XP</span>
+            </div>
+            
+            <div class="quest-body">
+                <p>{{description}}</p>
+                {{#instructions}}<p class="quest-instructions"><small>{{instructions}}</small></p>{{/instructions}}
+            </div>
+            
+            <div class="quest-footer">
+                {{#status}}
+                    {{#status}}<span class="status-badge">
+                        {{#status}}0{{/status}}{{^status}}🔒 Gesperrt{{/status}}
+                        {{#status}}1{{/status}}{{^status}}✅ Verfügbar{{/status}}
+                        {{#status}}2{{/status}}{{^status}}🏆 Abgeschlossen{{/status}}
+                    </span>{{/status}}
+                {{/status}}
+                
+                {{#datecompleted}}
+                <span class="completion-date">
+                    Abgeschlossen am {{#userdate}}{{datecompleted}}, %d.%m.%Y{{/userdate}}
+                </span>
+                {{/datecompleted}}
+            </div>
+        </div>
+        {{/quests}}
+        
+        {{^quests}}
+        <div class="no-quests">
+            <p>{{#str}}noquestsavailable, local_quest{{/str}}</p>
+            {{#canmanage}}
+            <a href="editquest.php?courseid={{courseid}}" class="btn btn-primary">
+                {{#str}}createnewquest, local_quest{{/str}}
+            </a>
+            {{/canmanage}}
+        </div>
+        {{/quests}}
+    </div>
+</div>
